@@ -8,6 +8,12 @@
   revision = "53e6ce116135b80d037921a7fdd5138cf32d7a8a"
 
 [[projects]]
+  name = "github.com/robfig/cron"
+  packages = ["."]
+  revision = "b41be1df696709bb6395fe435af20370037c0b4c"
+  version = "v1.1"
+
+[[projects]]
   name = "github.com/tbruyelle/hipchat-go"
   packages = ["hipchat"]
   revision = "749fb9e14beb9995f677c101a754393cecb64b0f"
@@ -16,6 +22,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "056e32b2a42d90dbf8bf8306b1ca5b3092ddce1b139e23a333fe4307735c574c"
+  inputs-digest = "ba9fc9a426c14422f9fd85043afeae9c3ac2ded5369410d459c1ffefd8f4f801"
   solver-name = "gps-cdcl"
   solver-version = 1

@@ -5,9 +5,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
 	"time"
 
+	"github.com/robfig/cron"
 	"github.com/tbruyelle/hipchat-go/hipchat"
 )
 
@@ -56,7 +58,16 @@ func formatDateReadable(date time.Time) string {
 
 type formatDateFunc func(time.Time) string
 
-func getReportingDates(today time.Time) (start, end time.Time) {
+func getReportingDates() (start, end time.Time) {
+
+	year, month, day := time.Now().Date()
+	today, err := time.Parse(time.RFC3339,
+		fmt.Sprintf("%02d-%02d-%02dT09:00:00+10:00", year, month, day))
+
+	if err != nil {
+		panic(err)
+	}
+
 	s := 2
 	e := 1
 
@@ -101,20 +112,35 @@ func generateFilter(f formatDateFunc, start, end time.Time) string {
 
 func main() {
 
+	c := cron.New()
+	c.ErrorLog = log.New(os.Stderr, "", log.LstdFlags)
+	err := c.AddFunc("0 0 9,11 * * MON-FRI", checkBugSnag)
+	if err != nil {
+		panic(err)
+	}
+
+	c.Start()
+
+	//Wait until exit
+	signalChan := make(chan os.Signal, 1)
+	cleanupDone := make(chan bool)
+	signal.Notify(signalChan, os.Interrupt)
+	go func() {
+		for range signalChan {
+			cleanupDone <- true
+		}
+	}()
+	<-cleanupDone
+}
+
+func checkBugSnag() {
+
 	consoleURL := fmt.Sprintf(
 		"https://app.bugsnag.com/%s/errors?",
 		getConsoleName(),
 	)
 
-	year, month, day := time.Now().Date()
-	today, err := time.Parse(time.RFC3339,
-		fmt.Sprintf("%02d-%02d-%02dT09:00:00+10:00", year, month, day))
-
-	start, end := getReportingDates(today)
-
-	if err != nil {
-		panic(err)
-	}
+	start, end := getReportingDates()
 
 	filters := generateFilter(formatDate, start, end)
 
