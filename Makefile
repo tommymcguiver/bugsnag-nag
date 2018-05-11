@@ -1,4 +1,4 @@
 .PHONY: run
 
 run:
-	source .dontcheckin && go run main.go
+	source .env && go run main.go
