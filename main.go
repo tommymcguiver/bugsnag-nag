@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -9,6 +10,35 @@ import (
 
 	"github.com/tbruyelle/hipchat-go/hipchat"
 )
+
+func mustEnv(env string) string {
+	e, found := os.LookupEnv(env)
+
+	if !found {
+		panic(found)
+	}
+	return e
+}
+
+func getBugsnagToken() string {
+	return mustEnv("BUGSNAG_TOKEN")
+}
+
+func getHipChatToken() string {
+	return mustEnv("HIPCHAT_TOKEN")
+}
+
+func getHipChatRoomName() string {
+	return mustEnv("HIPCHAT_ROOM_NAME")
+}
+
+func getProjectID() string {
+	return mustEnv("PROJECT_ID")
+}
+
+func getConsoleName() string {
+	return mustEnv("CONSOLE_NAME")
+}
 
 func formatDate(date time.Time) string {
 	return date.UTC().Format("2006-01-02T15:04:05Z")
@@ -26,18 +56,37 @@ func formatDateReadable(date time.Time) string {
 
 type formatDateFunc func(time.Time) string
 
-func generateFilter(f formatDateFunc, today time.Time) string {
+func getReportingDates(today time.Time) (start, end time.Time) {
+	s := 2
+	e := 1
+
+	//Reporting Periods
+	switch today.Weekday() {
+	case time.Monday:
+		s += 2
+		e += 2
+	case time.Tuesday:
+		s += 2
+	}
+
+	start = today.Add(-time.Hour * time.Duration(24*s))
+	end = today.Add(-time.Hour * time.Duration(24*e))
+
+	return
+}
+
+func generateFilter(f formatDateFunc, start, end time.Time) string {
 	return strings.Join(
 		[]string{
 			"filters[event.since][][type]=eq",
 			fmt.Sprintf(
 				"filters[event.since][][value]=%s",
-				f(today.Add(-time.Hour*24*2)),
+				f(start),
 			),
 			"filters[event.before][][type]=eq",
 			fmt.Sprintf(
 				"filters[event.before][][value]=%s",
-				f(today.Add(-time.Hour*24*1)),
+				f(end),
 			),
 			"filters[error.has_issue][][type]=eq",
 			"filters[error.has_issue][][value]=false",
@@ -48,35 +97,6 @@ func generateFilter(f formatDateFunc, today time.Time) string {
 		},
 		"&",
 	)
-}
-
-func MustEnv(env string) string {
-	e, found := os.LookupEnv(env)
-
-	if !found {
-		panic(found)
-	}
-	return e
-}
-
-func getBugsnagToken() string {
-	return MustEnv("BUGSNAG_TOKEN")
-}
-
-func getHipChatToken() string {
-	return MustEnv("HIPCHAT_TOKEN")
-}
-
-func getHipChatRoomName() string {
-	return MustEnv("HIPCHAT_ROOM_NAME")
-}
-
-func getProjectID() string {
-	return MustEnv("PROJECT_ID")
-}
-
-func getConsoleName() string {
-	return MustEnv("CONSOLE_NAME")
 }
 
 func main() {
@@ -90,11 +110,13 @@ func main() {
 	today, err := time.Parse(time.RFC3339,
 		fmt.Sprintf("%02d-%02d-%02dT09:00:00+10:00", year, month, day))
 
+	start, end := getReportingDates(today)
+
 	if err != nil {
 		panic(err)
 	}
 
-	filters := generateFilter(formatDate, today)
+	filters := generateFilter(formatDate, start, end)
 
 	url := []string{
 		fmt.Sprintf(
@@ -124,26 +146,27 @@ func main() {
 		panic(resp.StatusCode)
 	}
 
-	if count := resp.Header.Get("X-Total-Count"); count != "0" {
-		//Is a big hack, but filters in console not the same as API
-		consoleFull := fmt.Sprintf("%s%s", consoleURL,
+	consoleFull := fmt.Sprintf("%s%s", consoleURL,
+		strings.Replace(
 			strings.Replace(
 				strings.Replace(
-					strings.Replace(
-						generateFilter(formatDateConsole, today),
-						"[]",
-						"[0]",
-						-1,
-					),
-					"[value]",
-					"",
+					generateFilter(formatDateConsole, start, end),
+					"[]",
+					"[0]",
 					-1,
 				),
-				"[0]=anyone",
-				"[0][value]=anyone",
-				1,
+				"[value]",
+				"",
+				-1,
 			),
-		)
+			"[0]=anyone",
+			"[0][value]=anyone",
+			1,
+		),
+	)
+
+	if count := resp.Header.Get("X-Total-Count"); count != "0" {
+		//Is a big hack, but filters in console not the same as API
 
 		c := hipchat.NewClient(getHipChatToken())
 
@@ -151,8 +174,8 @@ func main() {
 			Message: fmt.Sprintf(
 				"%s bugs not triaged from %s to %s, see: %s",
 				count,
-				formatDateReadable(today.Add(-time.Hour*24*2)),
-				formatDateReadable(today.Add(-time.Hour*24*1)),
+				formatDateReadable(start),
+				formatDateReadable(end),
 				consoleFull,
 			),
 		}
@@ -161,5 +184,16 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
+		return
 	}
+
+	//For Debugging, add verbosity option when more mature
+	log.Println(fmt.Sprintf(
+		"%s bugs not triaged from %s to %s, see: %s",
+		"0",
+		formatDateReadable(start),
+		formatDateReadable(end),
+		consoleFull,
+	),
+	)
 }
