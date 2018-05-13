@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -110,7 +111,29 @@ func generateFilter(f formatDateFunc, start, end time.Time) string {
 	)
 }
 
+var (
+	oneShot bool
+	verbose bool
+)
+
+func init() {
+	flag.BoolVar(&oneShot, "oneshot", false, "Check bugsnag immediately")
+	flag.BoolVar(&verbose, "verbose", false, "Add verbosity")
+	flag.Parse()
+}
+
+func logMessage(m string) {
+	if verbose {
+		log.Println(m)
+	}
+}
+
 func main() {
+
+	if oneShot {
+		checkBugSnag()
+		return
+	}
 
 	c := cron.New()
 	c.ErrorLog = log.New(os.Stderr, "", log.LstdFlags)
@@ -162,6 +185,8 @@ func checkBugSnag() {
 
 	client := &http.Client{}
 
+	logMessage("Query bugsnag")
+
 	resp, err := client.Do(req)
 
 	if err != nil {
@@ -206,6 +231,7 @@ func checkBugSnag() {
 			),
 		}
 
+		logMessage("Notify hipchat")
 		_, err := c.Room.Notification(getHipChatRoomName(), notifRq)
 		if err != nil {
 			panic(err)
@@ -213,8 +239,7 @@ func checkBugSnag() {
 		return
 	}
 
-	//For Debugging, add verbosity option when more mature
-	log.Println(fmt.Sprintf(
+	logMessage(fmt.Sprintf(
 		"%s bugs not triaged from %s to %s, see: %s",
 		"0",
 		formatDateReadable(start),
